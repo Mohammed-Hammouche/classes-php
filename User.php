@@ -2,57 +2,86 @@
 
 class User {
     private $id;
-    public $login;
-    public $password; // Handle password hashing
-    public $email;
-    public $firstname;
-    public $lastname;
+    private $login;
+    private $password;
+    private $email;
+    private $firstname;
+    private $lastname;
 
-    // Constructor to initialize attributes
-    public function __construct($login, $password, $email, $firstname, $lastname, $id = null) {
-        $this->id = $id;
+    public function __construct($login, $password, $email, $firstname, $lastname) {
         $this->login = $login;
-        $this->password = $password ? password_hash($password, PASSWORD_BCRYPT) : null; // Hash the password
+        $this->password = password_hash($password, PASSWORD_DEFAULT); // Secure password hashing
         $this->email = $email;
         $this->firstname = $firstname;
         $this->lastname = $lastname;
     }
 
-    // Create a new user (C in CRUD)
     public function create($conn) {
-        $sql = "INSERT INTO utilisateurs (login, password, email, firstname, lastname) VALUES (?, ?, ?, ?, ?)";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("sssss", $this->login, $this->password, $this->email, $this->firstname, $this->lastname);
-        return $stmt->execute();
+        try {
+            // Check if email already exists
+            $checkEmailStmt = $conn->prepare("SELECT id FROM utilisateurs WHERE email = ?");
+            $checkEmailStmt->bind_param("s", $this->email);
+            $checkEmailStmt->execute();
+            if ($checkEmailStmt->get_result()->num_rows > 0) {
+                return "email_exists";
+            }
+            
+            // Check if login already exists
+            $checkLoginStmt = $conn->prepare("SELECT id FROM utilisateurs WHERE login = ?");
+            $checkLoginStmt->bind_param("s", $this->login);
+            $checkLoginStmt->execute();
+            if ($checkLoginStmt->get_result()->num_rows > 0) {
+                return "login_exists";
+            }
+            
+            // If neither exists, proceed with creation
+            $stmt = $conn->prepare("INSERT INTO utilisateurs (login, password, email, firstname, lastname) VALUES (?, ?, ?, ?, ?)");
+            $stmt->bind_param("sssss", $this->login, $this->password, $this->email, $this->firstname, $this->lastname);
+            
+            if ($stmt->execute()) {
+                return "success";
+            } else {
+                return "error";
+            }
+        } catch (mysqli_sql_exception $e) {
+            return "error";
+        }
     }
 
-    // Read user details by ID (R in CRUD)
     public static function read($conn, $id) {
-        $sql = "SELECT * FROM utilisateurs WHERE id = ?";
-        $stmt = $conn->prepare($sql);
+        $stmt = $conn->prepare("SELECT * FROM utilisateurs WHERE id = ?");
         $stmt->bind_param("i", $id);
         $stmt->execute();
         return $stmt->get_result()->fetch_assoc();
     }
 
-    // Update user details (U in CRUD)
-    public function update($conn) {
-        $sql = "UPDATE utilisateurs SET login = ?, password = ?, email = ?, firstname = ?, lastname = ? WHERE id = ?";
+    public static function update($conn, $id, $data) {
+        $sql = "UPDATE utilisateurs SET ";
+        $params = [];
+        $types = "";
+        
+        foreach ($data as $key => $value) {
+            if ($key === 'password') {
+                $value = password_hash($value, PASSWORD_DEFAULT);
+            }
+            $sql .= "$key = ?, ";
+            $params[] = $value;
+            $types .= "s";
+        }
+        
+        $sql = rtrim($sql, ", ") . " WHERE id = ?";
+        $types .= "i";
+        $params[] = $id;
+        
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("sssssi", $this->login, $this->password, $this->email, $this->firstname, $this->lastname, $this->id);
+        $stmt->bind_param($types, ...$params);
         return $stmt->execute();
     }
 
-    // Delete a user by ID (D in CRUD)
     public static function delete($conn, $id) {
-        $sql = "DELETE FROM utilisateurs WHERE id = ?";
-        $stmt = $conn->prepare($sql);
+        $stmt = $conn->prepare("DELETE FROM utilisateurs WHERE id = ?");
         $stmt->bind_param("i", $id);
         return $stmt->execute();
-    }
-
-    public function getId() {
-        return $this->id;
     }
 }
 ?>
